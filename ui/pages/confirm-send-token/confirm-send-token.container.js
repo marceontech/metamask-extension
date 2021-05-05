@@ -3,16 +3,7 @@ import { compose } from 'redux';
 import { withRouter } from 'react-router-dom';
 import { clearConfirmTransaction } from '../../ducks/confirm-transaction/confirm-transaction.duck';
 import { showSendTokenPage } from '../../store/actions';
-import {
-  setEditingTransactionId,
-  setGasLimit,
-  setGasPrice,
-  setSendFrom,
-  updateSendAmount,
-  updateSendErrors,
-  updateSendTo,
-  updateSendToken,
-} from '../../ducks/send';
+import { beginEditingTransaction, updateSendToken } from '../../ducks/send';
 import { conversionUtil } from '../../helpers/utils/conversion-util';
 import {
   getTokenValueParam,
@@ -45,13 +36,17 @@ const mapDispatchToProps = (dispatch) => {
         toNumericBase: 'hex',
       });
 
-      dispatch(updateSendTo({ to }));
-      dispatch(setGasLimit(gasLimit));
-      dispatch(setGasPrice(gasPrice));
-      dispatch(updateSendAmount(tokenAmountInHex));
-      dispatch(updateSendErrors({ to: null, amount: null }));
-      dispatch(setSendFrom(from));
-      dispatch(setEditingTransactionId(id?.toString()));
+      dispatch(
+        beginEditingTransaction({
+          id: id?.toString(),
+          gasLimit,
+          gasPrice,
+          from,
+          amount: tokenAmountInHex,
+          to,
+        }),
+      );
+
       dispatch(updateSendToken({ ...tokenProps, address: tokenAddress }));
 
       dispatch(clearConfirmTransaction());

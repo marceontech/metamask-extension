@@ -3,12 +3,6 @@ import PropTypes from 'prop-types';
 import { isValidAddress } from 'ethereumjs-util';
 import { debounce } from 'lodash';
 import {
-  getAmountErrorObject,
-  getGasFeeErrorObject,
-  getToAddressForGasUpdate,
-  doesAmountErrorRequireUpdate,
-} from './send.utils';
-import {
   getToWarningObject,
   getToErrorObject,
 } from './send-content/add-recipient/add-recipient';
@@ -26,32 +20,17 @@ import {
 export default class SendTransactionScreen extends Component {
   static propTypes = {
     addressBook: PropTypes.arrayOf(PropTypes.object),
-    amount: PropTypes.string,
-    blockGasLimit: PropTypes.string,
-    conversionRate: PropTypes.number,
-    editingTransactionId: PropTypes.string,
-    fetchBasicGasEstimates: PropTypes.func.isRequired,
-    from: PropTypes.object,
-    gasLimit: PropTypes.string,
-    gasPrice: PropTypes.string,
-    gasTotal: PropTypes.string,
     history: PropTypes.object,
     chainId: PropTypes.string,
-    primaryCurrency: PropTypes.string,
     resetSendState: PropTypes.func.isRequired,
-    selectedAddress: PropTypes.string,
     sendToken: PropTypes.object,
     showHexData: PropTypes.bool,
     to: PropTypes.string,
     toNickname: PropTypes.string,
     tokens: PropTypes.array,
-    tokenBalance: PropTypes.string,
-    tokenContract: PropTypes.object,
-    updateAndSetGasLimit: PropTypes.func.isRequired,
     updateSendEnsResolution: PropTypes.func.isRequired,
     updateSendEnsResolutionError: PropTypes.func.isRequired,
-    updateSendErrors: PropTypes.func.isRequired,
-    updateSendTo: PropTypes.func.isRequired,
+    updateRecipient: PropTypes.func.isRequired,
     updateSendTokenBalance: PropTypes.func.isRequired,
     updateToNicknameIfNecessary: PropTypes.func.isRequired,
     scanQrCode: PropTypes.func.isRequired,
@@ -59,6 +38,8 @@ export default class SendTransactionScreen extends Component {
     qrCodeData: PropTypes.object,
     sendTokenAddress: PropTypes.string,
     gasIsExcessive: PropTypes.bool.isRequired,
+    initializeSendState: PropTypes.func.isRequired,
+    initialized: PropTypes.bool.isRequired,
   };
 
   static contextTypes = {
@@ -80,18 +61,10 @@ export default class SendTransactionScreen extends Component {
 
   componentDidUpdate(prevProps) {
     const {
-      amount,
-      conversionRate,
-      from: { address, balance },
-      gasTotal,
       chainId,
-      primaryCurrency,
       sendToken,
-      tokenBalance,
-      updateSendErrors,
-      updateSendTo,
+      updateRecipient,
       updateSendTokenBalance,
-      tokenContract,
       to,
       toNickname,
       addressBook,
@@ -101,60 +74,17 @@ export default class SendTransactionScreen extends Component {
     } = this.props;
     const { toError, toWarning } = this.state;
 
-    let updateGas = false;
     const {
-      from: { balance: prevBalance },
-      gasTotal: prevGasTotal,
-      tokenBalance: prevTokenBalance,
       chainId: prevChainId,
       sendToken: prevSendToken,
       to: prevTo,
     } = prevProps;
 
-    const uninitialized = [prevBalance, prevGasTotal].every((n) => n === null);
-
-    const amountErrorRequiresUpdate = doesAmountErrorRequireUpdate({
-      balance,
-      gasTotal,
-      prevBalance,
-      prevGasTotal,
-      prevTokenBalance,
-      sendToken,
-      tokenBalance,
-    });
-
-    if (amountErrorRequiresUpdate) {
-      const amountErrorObject = getAmountErrorObject({
-        amount,
-        balance,
-        conversionRate,
-        gasTotal,
-        primaryCurrency,
-        sendToken,
-        tokenBalance,
-      });
-      const gasFeeErrorObject = sendToken
-        ? getGasFeeErrorObject({
-            balance,
-            conversionRate,
-            gasTotal,
-            primaryCurrency,
-            sendToken,
-          })
-        : { gasFee: null };
-      updateSendErrors(Object.assign(amountErrorObject, gasFeeErrorObject));
-    }
-
-    if (!uninitialized) {
+    if (this.props.initialized === true) {
       if (chainId !== prevChainId && chainId !== undefined) {
-        updateSendTokenBalance({
-          sendToken,
-          tokenContract,
-          address,
-        });
+        updateSendTokenBalance();
         updateToNicknameIfNecessary(to, toNickname, addressBook);
-        this.props.fetchBasicGasEstimates();
-        updateGas = true;
+        this.props.initializeSendState();
       }
     }
 
@@ -162,9 +92,7 @@ export default class SendTransactionScreen extends Component {
     const sendTokenAddress = sendToken && sendToken.address;
 
     if (sendTokenAddress && prevTokenAddress !== sendTokenAddress) {
-      this.updateSendToken();
       this.validate(this.state.query);
-      updateGas = true;
     }
 
     let scannedAddress;
@@ -174,8 +102,7 @@ export default class SendTransactionScreen extends Component {
         if (isValidAddress(scannedAddress)) {
           const currentAddress = prevTo?.toLowerCase();
           if (currentAddress !== scannedAddress) {
-            updateSendTo(scannedAddress);
-            updateGas = true;
+            updateRecipient({ address: scannedAddress });
             // Clean up QR code data after handling
             qrCodeDetected(null);
           }
@@ -184,14 +111,6 @@ export default class SendTransactionScreen extends Component {
           qrCodeDetected(null);
           this.setState({ toError: INVALID_RECIPIENT_ADDRESS_ERROR });
         }
-      }
-    }
-
-    if (updateGas) {
-      if (scannedAddress) {
-        this.updateGas({ to: scannedAddress });
-      } else {
-        this.updateGas();
       }
     }
 
@@ -216,14 +135,10 @@ export default class SendTransactionScreen extends Component {
   }
 
   componentDidMount() {
-    this.props.fetchBasicGasEstimates().then(() => {
-      this.updateGas();
-    });
+    this.props.initializeSendState();
   }
 
   UNSAFE_componentWillMount() {
-    this.updateSendToken();
-
     // Show QR Scanner modal  if ?scan=true
     if (window.location.search === '?scan=true') {
       this.props.scanQrCode();
@@ -277,47 +192,6 @@ export default class SendTransactionScreen extends Component {
     });
   }
 
-  updateSendToken() {
-    const {
-      from: { address },
-      sendToken,
-      tokenContract,
-      updateSendTokenBalance,
-    } = this.props;
-
-    updateSendTokenBalance({
-      sendToken,
-      tokenContract,
-      address,
-    });
-  }
-
-  updateGas({ to: updatedToAddress, amount: value, data } = {}) {
-    const {
-      amount,
-      blockGasLimit,
-      editingTransactionId,
-      gasLimit,
-      gasPrice,
-      selectedAddress,
-      sendToken,
-      to: currentToAddress,
-      updateAndSetGasLimit,
-    } = this.props;
-
-    updateAndSetGasLimit({
-      blockGasLimit,
-      editingTransactionId,
-      gasLimit,
-      gasPrice,
-      selectedAddress,
-      sendToken,
-      to: getToAddressForGasUpdate(updatedToAddress, currentToAddress),
-      value: value || amount,
-      data,
-    });
-  }
-
   render() {
     const { history, to } = this.props;
     let content;
@@ -353,11 +227,15 @@ export default class SendTransactionScreen extends Component {
           this.props.scanQrCode();
         }}
         onChange={this.onRecipientInputChange}
-        onValidAddressTyped={(address) => this.props.updateSendTo(address, '')}
+        onValidAddressTyped={(address) =>
+          this.props.updateRecipient({ address, nickname: '' })
+        }
         onPaste={(text) => {
-          this.props.updateSendTo(text) && this.updateGas();
+          this.props.updateRecipient({ address: text });
         }}
-        onReset={() => this.props.updateSendTo('', '')}
+        onReset={() =>
+          this.props.updateRecipient({ address: '', nickname: '' })
+        }
         updateEnsResolution={this.props.updateSendEnsResolution}
         updateEnsResolutionError={this.props.updateSendEnsResolutionError}
         internalSearch={internalSearch}
@@ -369,9 +247,6 @@ export default class SendTransactionScreen extends Component {
     const { toError, toWarning } = this.state;
     return (
       <AddRecipient
-        updateGas={({ to, amount, data } = {}) =>
-          this.updateGas({ to, amount, data })
-        }
         query={this.state.query}
         toError={toError}
         toWarning={toWarning}
@@ -389,9 +264,6 @@ export default class SendTransactionScreen extends Component {
     return [
       <SendContent
         key="send-content"
-        updateGas={({ to, amount, data } = {}) =>
-          this.updateGas({ to, amount, data })
-        }
         showHexData={showHexData}
         warning={toWarning}
         error={toError}

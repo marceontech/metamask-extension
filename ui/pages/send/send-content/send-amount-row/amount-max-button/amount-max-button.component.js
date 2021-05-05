@@ -4,16 +4,10 @@ import classnames from 'classnames';
 
 export default class AmountMaxButton extends Component {
   static propTypes = {
-    balance: PropTypes.string,
     buttonDataLoading: PropTypes.bool,
-    clearMaxAmount: PropTypes.func,
     inError: PropTypes.bool,
-    gasTotal: PropTypes.string,
     maxModeOn: PropTypes.bool,
-    sendToken: PropTypes.object,
-    setAmountToMax: PropTypes.func,
-    setMaxModeTo: PropTypes.func,
-    tokenBalance: PropTypes.string,
+    toggleSendMaxMode: PropTypes.func.isRequired,
   };
 
   static contextTypes = {
@@ -21,25 +15,8 @@ export default class AmountMaxButton extends Component {
     metricsEvent: PropTypes.func,
   };
 
-  setMaxAmount() {
-    const {
-      balance,
-      gasTotal,
-      sendToken,
-      setAmountToMax,
-      tokenBalance,
-    } = this.props;
-
-    setAmountToMax({
-      balance,
-      gasTotal,
-      sendToken,
-      tokenBalance,
-    });
-  }
-
   onMaxClick = () => {
-    const { setMaxModeTo, clearMaxAmount, maxModeOn } = this.props;
+    const { toggleSendMaxMode } = this.props;
     const { metricsEvent } = this.context;
 
     metricsEvent({
@@ -49,13 +26,7 @@ export default class AmountMaxButton extends Component {
         name: 'Clicked "Amount Max"',
       },
     });
-    if (maxModeOn) {
-      setMaxModeTo(false);
-      clearMaxAmount();
-    } else {
-      setMaxModeTo(true);
-      this.setMaxAmount();
-    }
+    toggleSendMaxMode();
   };
 
   render() {

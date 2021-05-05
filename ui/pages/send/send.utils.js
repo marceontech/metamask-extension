@@ -11,12 +11,7 @@ import {
 import { calcTokenAmount } from '../../helpers/utils/token-util';
 import { addHexPrefix } from '../../../app/scripts/lib/util';
 
-import {
-  INSUFFICIENT_FUNDS_ERROR,
-  INSUFFICIENT_TOKENS_ERROR,
-  NEGATIVE_ETH_ERROR,
-  TOKEN_TRANSFER_FUNCTION_SIGNATURE,
-} from './send.constants';
+import { TOKEN_TRANSFER_FUNCTION_SIGNATURE } from './send.constants';
 
 export {
   addGasBuffer,
@@ -24,9 +19,6 @@ export {
   calcTokenBalance,
   doesAmountErrorRequireUpdate,
   generateTokenTransferData,
-  getAmountErrorObject,
-  getGasFeeErrorObject,
-  getToAddressForGasUpdate,
   isBalanceSufficient,
   isTokenBalanceSufficient,
   removeLeadingZeroes,
@@ -88,79 +80,6 @@ function isTokenBalanceSufficient({ amount = '0x0', tokenBalance, decimals }) {
   );
 
   return tokenBalanceIsSufficient;
-}
-
-function getAmountErrorObject({
-  amount,
-  balance,
-  conversionRate,
-  gasTotal,
-  primaryCurrency,
-  sendToken,
-  tokenBalance,
-}) {
-  let insufficientFunds = false;
-  if (gasTotal && conversionRate && !sendToken) {
-    insufficientFunds = !isBalanceSufficient({
-      amount,
-      balance,
-      conversionRate,
-      gasTotal,
-      primaryCurrency,
-    });
-  }
-
-  let inSufficientTokens = false;
-  if (sendToken && tokenBalance !== null) {
-    const { decimals } = sendToken;
-    inSufficientTokens = !isTokenBalanceSufficient({
-      tokenBalance,
-      amount,
-      decimals,
-    });
-  }
-
-  const amountLessThanZero = conversionGreaterThan(
-    { value: 0, fromNumericBase: 'dec' },
-    { value: amount, fromNumericBase: 'hex' },
-  );
-
-  let amountError = null;
-
-  if (insufficientFunds) {
-    amountError = INSUFFICIENT_FUNDS_ERROR;
-  } else if (inSufficientTokens) {
-    amountError = INSUFFICIENT_TOKENS_ERROR;
-  } else if (amountLessThanZero) {
-    amountError = NEGATIVE_ETH_ERROR;
-  }
-
-  return { amount: amountError };
-}
-
-function getGasFeeErrorObject({
-  balance,
-  conversionRate,
-  gasTotal,
-  primaryCurrency,
-}) {
-  let gasFeeError = null;
-
-  if (gasTotal && conversionRate) {
-    const insufficientFunds = !isBalanceSufficient({
-      amount: '0x0',
-      balance,
-      conversionRate,
-      gasTotal,
-      primaryCurrency,
-    });
-
-    if (insufficientFunds) {
-      gasFeeError = INSUFFICIENT_FUNDS_ERROR;
-    }
-  }
-
-  return { gasFee: gasFeeError };
 }
 
 function calcTokenBalance({ sendToken, usersToken }) {
@@ -250,12 +169,6 @@ function generateTokenTransferData({
       )
       .join('')
   );
-}
-
-function getToAddressForGasUpdate(...addresses) {
-  return [...addresses, '']
-    .find((str) => str !== undefined && str !== null)
-    .toLowerCase();
 }
 
 function removeLeadingZeroes(str) {

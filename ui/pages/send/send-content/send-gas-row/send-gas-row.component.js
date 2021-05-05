@@ -14,9 +14,8 @@ export default class SendGasRow extends Component {
     maxModeOn: PropTypes.bool,
     showCustomizeGasModal: PropTypes.func,
     sendToken: PropTypes.object,
-    setAmountToMax: PropTypes.func,
-    setGasPrice: PropTypes.func,
-    setGasLimit: PropTypes.func,
+    updateGasPrice: PropTypes.func,
+    updateGasLimit: PropTypes.func,
     tokenBalance: PropTypes.string,
     gasPriceButtonGroupProps: PropTypes.object,
     gasButtonGroupShown: PropTypes.bool,
@@ -69,23 +68,6 @@ export default class SendGasRow extends Component {
     );
   }
 
-  setMaxAmount() {
-    const {
-      balance,
-      gasTotal,
-      sendToken,
-      setAmountToMax,
-      tokenBalance,
-    } = this.props;
-
-    setAmountToMax({
-      balance,
-      gasTotal,
-      sendToken,
-      tokenBalance,
-    });
-  }
-
   renderContent() {
     const {
       gasLoadingError,
@@ -94,10 +76,9 @@ export default class SendGasRow extends Component {
       gasPriceButtonGroupProps,
       gasButtonGroupShown,
       advancedInlineGasShown,
-      maxModeOn,
       resetGasButtons,
-      setGasPrice,
-      setGasLimit,
+      updateGasPrice,
+      updateGasLimit,
       gasPrice,
       gasLimit,
       insufficientBalance,
@@ -123,9 +104,6 @@ export default class SendGasRow extends Component {
               },
             });
             await gasPriceButtonGroupProps.handleGasPriceSelection(opts);
-            if (maxModeOn) {
-              this.setMaxAmount();
-            }
           }}
         />
       </div>
@@ -134,22 +112,15 @@ export default class SendGasRow extends Component {
       <GasFeeDisplay
         gasLoadingError={gasLoadingError}
         gasTotal={gasTotal}
-        onReset={() => {
-          resetGasButtons();
-          if (maxModeOn) {
-            this.setMaxAmount();
-          }
-        }}
-        onClick={() => showCustomizeGasModal()}
+        onReset={resetGasButtons}
+        onClick={showCustomizeGasModal}
       />
     );
     const advancedGasInputs = (
       <div>
         <AdvancedGasInputs
-          updateCustomGasPrice={(newGasPrice) =>
-            setGasPrice({ gasPrice: newGasPrice })
-          }
-          updateCustomGasLimit={setGasLimit}
+          updateCustomGasPrice={updateGasPrice}
+          updateCustomGasLimit={updateGasLimit}
           customGasPrice={gasPrice}
           customGasLimit={gasLimit}
           insufficientBalance={insufficientBalance}

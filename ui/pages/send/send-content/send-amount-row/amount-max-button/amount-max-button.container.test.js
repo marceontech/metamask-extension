@@ -1,10 +1,6 @@
 import sinon from 'sinon';
 
-import {
-  updateSendErrors,
-  updateSendAmount,
-  setMaxModeTo,
-} from '../../../../../ducks/send';
+import { toggleSendMaxMode } from '../../../../../ducks/send';
 
 let mapStateToProps;
 let mapDispatchToProps;
@@ -26,9 +22,7 @@ jest.mock('./amount-max-button.utils.js', () => ({
 }));
 
 jest.mock('../../../../../ducks/send', () => ({
-  updateSendErrors: jest.fn(),
-  setMaxModeTo: jest.fn(),
-  updateSendAmount: jest.fn(),
+  toggleSendMaxMode: jest.fn(),
   getGasTotal: (s) => `mockGasTotal:${s}`,
   getSendToken: (s) => `mockSendToken:${s}`,
   getSendFromBalance: (s) => `mockBalance:${s}`,
@@ -61,22 +55,11 @@ describe('amount-max-button container', () => {
       mapDispatchToPropsObject = mapDispatchToProps(dispatchSpy);
     });
 
-    describe('setAmountToMax()', () => {
+    describe('toggleSendMaxMode()', () => {
       it('should dispatch an action', () => {
-        mapDispatchToPropsObject.setAmountToMax({ val: 11, foo: 'bar' });
-        expect(dispatchSpy.calledTwice).toStrictEqual(true);
-        expect(updateSendErrors).toHaveBeenCalled();
-        expect(updateSendErrors).toHaveBeenCalledWith({ amount: null });
-        expect(updateSendAmount).toHaveBeenCalled();
-        expect(updateSendAmount).toHaveBeenCalledWith(12);
-      });
-    });
-
-    describe('setMaxModeTo()', () => {
-      it('should dispatch an action', () => {
-        mapDispatchToPropsObject.setMaxModeTo('mockVal');
+        mapDispatchToPropsObject.toggleSendMaxMode();
         expect(dispatchSpy.calledOnce).toStrictEqual(true);
-        expect(setMaxModeTo).toHaveBeenCalledWith('mockVal');
+        expect(toggleSendMaxMode).toHaveBeenCalled();
       });
     });
   });

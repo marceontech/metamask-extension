@@ -14,8 +14,6 @@ import { calcMaxAmount } from '../send-amount-row/amount-max-button/amount-max-b
 import {
   showGasButtonGroup,
   updateSendErrors,
-  setGasLimit,
-  setGasPrice,
   updateSendAmount,
   getGasTotal,
   getGasPrice,
@@ -28,6 +26,8 @@ import {
   gasFeeIsInError,
   getGasButtonGroupShown,
   getSendToken,
+  updateGasPrice,
+  updateGasLimit,
 } from '../../../../ducks/send';
 import { getConversionRate } from '../../../../ducks/metamask/metamask';
 import {
@@ -95,12 +95,12 @@ function mapDispatchToProps(dispatch) {
   return {
     showCustomizeGasModal: () =>
       dispatch(showModal({ name: 'CUSTOMIZE_GAS', hideBasic: true })),
-    setGasPrice: ({ gasPrice }) => {
-      dispatch(setGasPrice(gasPrice));
+    updateGasPrice: (gasPrice) => {
+      dispatch(updateGasPrice(gasPrice));
       dispatch(setCustomGasPrice(gasPrice));
     },
-    setGasLimit: (newLimit) => {
-      dispatch(setGasLimit(newLimit));
+    updateGasLimit: (newLimit) => {
+      dispatch(updateGasLimit(newLimit));
       dispatch(setCustomGasLimit(newLimit));
     },
     setAmountToMax: (maxAmountDataObject) => {
@@ -116,7 +116,7 @@ function mergeProps(stateProps, dispatchProps, ownProps) {
   const { gasPriceButtonGroupProps } = stateProps;
   const { gasButtonInfo } = gasPriceButtonGroupProps;
   const {
-    setGasPrice: dispatchSetGasPrice,
+    updateGasPrice: dispatchUpdateGasPrice,
     showGasButtonGroup: dispatchShowGasButtonGroup,
     resetCustomData: dispatchResetCustomData,
     ...otherDispatchProps
@@ -128,13 +128,13 @@ function mergeProps(stateProps, dispatchProps, ownProps) {
     ...ownProps,
     gasPriceButtonGroupProps: {
       ...gasPriceButtonGroupProps,
-      handleGasPriceSelection: dispatchSetGasPrice,
+      handleGasPriceSelection: dispatchUpdateGasPrice,
     },
     resetGasButtons: () => {
       dispatchResetCustomData();
-      dispatchSetGasPrice(gasButtonInfo[1].priceInHexWei);
+      dispatchUpdateGasPrice(gasButtonInfo[1].priceInHexWei);
       dispatchShowGasButtonGroup();
     },
-    setGasPrice: dispatchSetGasPrice,
+    updateGasPrice: dispatchUpdateGasPrice,
   };
 }

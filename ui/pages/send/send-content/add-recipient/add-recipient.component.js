@@ -15,8 +15,7 @@ export default class AddRecipient extends Component {
     query: PropTypes.string,
     ownedAccounts: PropTypes.array,
     addressBook: PropTypes.array,
-    updateGas: PropTypes.func,
-    updateSendTo: PropTypes.func,
+    updateRecipient: PropTypes.func,
     ensResolution: PropTypes.string,
     toError: PropTypes.string,
     toWarning: PropTypes.string,
@@ -62,11 +61,8 @@ export default class AddRecipient extends Component {
     isShowingTransfer: false,
   };
 
-  selectRecipient = (to, nickname = '') => {
-    const { updateSendTo, updateGas } = this.props;
-
-    updateSendTo(to, nickname);
-    updateGas({ to });
+  selectRecipient = (address, nickname = '') => {
+    this.props.updateRecipient({ address, nickname });
   };
 
   searchForContacts = () => {

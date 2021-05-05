@@ -1,178 +1,112 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 import abi from 'human-standard-token-abi';
 import log from 'loglevel';
 import { addHexPrefix } from 'ethereumjs-util';
-import { multiplyCurrencies } from '../../helpers/utils/conversion-util';
+import { debounce } from 'lodash';
+import {
+  conversionGreaterThan,
+  multiplyCurrencies,
+  subtractCurrencies,
+} from '../../helpers/utils/conversion-util';
 import { GAS_LIMITS } from '../../../shared/constants/gas';
-import { MIN_GAS_LIMIT_HEX } from '../../pages/send/send.constants';
+import {
+  INSUFFICIENT_FUNDS_ERROR,
+  INSUFFICIENT_TOKENS_ERROR,
+  MIN_GAS_LIMIT_HEX,
+  NEGATIVE_ETH_ERROR,
+} from '../../pages/send/send.constants';
 
 import {
   addGasBuffer,
   calcGasTotal,
   calcTokenBalance,
   generateTokenTransferData,
+  isBalanceSufficient,
+  isTokenBalanceSufficient,
 } from '../../pages/send/send.utils';
 import {
   getAveragePriceEstimateInHexWEI,
+  getGasPriceInHexWei,
   getSelectedAccount,
   getTargetAccount,
 } from '../../selectors';
 import { estimateGas } from '../../store/actions';
-import { setCustomGasLimit } from '../gas/gas.duck';
+import {
+  fetchBasicGasEstimates,
+  setCustomGasLimit,
+  SET_BASIC_GAS_ESTIMATE_DATA,
+} from '../gas/gas.duck';
+import { SELECTED_ACCOUNT_CHANGED } from '../../store/actionConstants';
+import { getConversionRate } from '../metamask/metamask';
 
 const name = 'send';
 
-export const initialState = {
-  gasButtonGroupShown: true,
-  gasLimit: null,
-  gasPrice: null,
-  gasTotal: null,
-  gasIsLoading: false,
-  tokenBalance: '0x0',
-  from: '',
-  to: '',
-  amount: '0',
-  memo: '',
-  errors: {},
-  maxModeOn: false,
-  editingTransactionId: null,
-  toNickname: '',
-  ensResolution: null,
-  ensResolutionError: '',
-};
+function computeGasFeeError({
+  gasTotal,
+  conversionRate,
+  primaryCurrency,
+  etherBalance,
+}) {
+  if (gasTotal && conversionRate) {
+    const insufficientFunds = !isBalanceSufficient({
+      amount: '0x0',
+      balance: etherBalance,
+      conversionRate,
+      gasTotal,
+      primaryCurrency,
+    });
 
-const slice = createSlice({
-  name,
-  initialState,
-  reducers: {
-    updateSendErrors: (state, action) => {
-      state.errors = { ...state.errors, ...action.payload };
-    },
-    showGasButtonGroup: (state) => {
-      state.gasButtonGroupShown = true;
-    },
-    hideGasButtonGroup: (state) => {
-      state.gasButtonGroupShown = false;
-    },
-    setGasLimit: (state, action) => {
-      state.gasLimit = action.payload;
-    },
-    setGasPrice: (state, action) => {
-      state.gasPrice = action.payload;
-    },
-    setSendTokenBalance: (state, action) => {
-      state.tokenBalance = action.payload;
-    },
-    updateSendHexData: (state, action) => {
-      state.data = action.payload;
-    },
-    updateSendTo: (state, action) => {
-      state.to = action.payload.to;
-      state.toNickname = action.payload.nickname;
-    },
-    updateSendAmount: (state, action) => {
-      state.amount = action.payload;
-    },
-    setMaxModeTo: (state, action) => {
-      state.maxModeOn = action.payload;
-    },
-    setEditingTransactionId: (state, action) => {
-      state.editingTransactionId = action.payload;
-    },
-    setSendFrom: (state, action) => {
-      state.from = action.payload;
-    },
-    updateSendToken: (state, action) => {
-      state.token = action.payload;
-      if (state.editingTransactionId && !state.token) {
-        const unapprovedTx =
-          state?.unapprovedTxs?.[state.editingTransactionId] || {};
-        const txParams = unapprovedTx.txParams || {};
-        state.tokenBalance = null;
-        state.balance = '0';
-        state.from = unapprovedTx.from ?? '';
-        txParams.data = '';
-      }
-    },
-    updateSendEnsResolution: (state, action) => {
-      state.ensResolution = action.payload;
-      state.ensResolutionError = '';
-    },
-    updateSendEnsResolutionError: (state, action) => {
-      state.ensResolution = null;
-      state.ensResolutionError = action.payload;
-    },
-    resetSendState: () => initialState,
-    gasLoadingStarted: (state) => {
-      state.gasIsLoading = true;
-    },
-    gasLoadingFinished: (state) => {
-      state.gasIsLoading = false;
-    },
-  },
-});
+    if (insufficientFunds) {
+      return INSUFFICIENT_FUNDS_ERROR;
+    }
+  }
+  return null;
+}
 
-const { actions, reducer } = slice;
+function computeSendError({
+  gasTotal,
+  sendToken,
+  conversionRate,
+  primaryCurrency,
+  etherBalance,
+  tokenBalance,
+  amount,
+}) {
+  if (gasTotal && conversionRate && !sendToken) {
+    if (
+      isBalanceSufficient({
+        amount,
+        balance: etherBalance,
+        conversionRate,
+        gasTotal,
+        primaryCurrency,
+      }) === false
+    ) {
+      return INSUFFICIENT_FUNDS_ERROR;
+    }
+  }
 
-export default reducer;
+  if (sendToken && tokenBalance !== null) {
+    const { decimals } = sendToken;
+    if (
+      isTokenBalanceSufficient({
+        tokenBalance,
+        amount,
+        decimals,
+      }) === false
+    ) {
+      return INSUFFICIENT_TOKENS_ERROR;
+    }
+  }
 
-const {
-  updateSendErrors,
-  showGasButtonGroup,
-  hideGasButtonGroup,
-  setGasLimit,
-  setGasPrice,
-  setSendTokenBalance,
-  updateSendHexData,
-  updateSendTo,
-  updateSendAmount,
-  setMaxModeTo,
-  updateSendToken,
-  updateSendEnsResolution,
-  updateSendEnsResolutionError,
-  resetSendState,
-  gasLoadingStarted,
-  gasLoadingFinished,
-  setEditingTransactionId,
-  setSendFrom,
-} = actions;
-
-export {
-  updateSendErrors,
-  showGasButtonGroup,
-  hideGasButtonGroup,
-  setGasLimit,
-  setGasPrice,
-  setSendTokenBalance,
-  updateSendHexData,
-  updateSendTo,
-  updateSendAmount,
-  setMaxModeTo,
-  updateSendToken,
-  updateSendEnsResolution,
-  updateSendEnsResolutionError,
-  setSendFrom,
-  setEditingTransactionId,
-  resetSendState,
-};
-
-export function updateSendTokenBalance({ sendToken, tokenContract, address }) {
-  return (dispatch) => {
-    const tokenBalancePromise = tokenContract
-      ? tokenContract.balanceOf(address)
-      : Promise.resolve();
-    return tokenBalancePromise
-      .then((usersToken) => {
-        if (usersToken) {
-          const newTokenBalance = calcTokenBalance({ sendToken, usersToken });
-          dispatch(setSendTokenBalance(newTokenBalance));
-        }
-      })
-      .catch((err) => {
-        log.error(err);
-        updateSendErrors({ tokenBalance: 'tokenBalanceError' });
-      });
-  };
+  const amountLessThanZero = conversionGreaterThan(
+    { value: 0, fromNumericBase: 'dec' },
+    { value: amount, fromNumericBase: 'hex' },
+  );
+  if (amountLessThanZero) {
+    return NEGATIVE_ETH_ERROR;
+  }
+  return null;
 }
 
 async function estimateGasLimitForSend({
@@ -274,38 +208,511 @@ async function estimateGasLimitForSend({
   }
 }
 
-export function updateGasData({
-  gasPrice,
-  blockGasLimit,
-  selectedAddress,
-  sendToken,
-  to,
-  value,
-  data,
-}) {
-  return async (dispatch) => {
+const computeEstimatedGasLimitAsyncThunk = createAsyncThunk(
+  'send/computeEstimatedGasLimit',
+  async (payload, thunkApi) => {
     // Indicate to the user that the app has started estimating gasLimit. Note
     // that this gas loading variable is specific to just gasLimit, not gas
     // price.
-    await dispatch(gasLoadingStarted());
-
-    try {
+    const currentState = thunkApi.getState();
+    if (!currentState.send.editingTransactionId) {
       const gasLimit = await estimateGasLimitForSend({
-        gasPrice,
-        blockGasLimit,
-        selectedAddress,
-        sendToken,
-        to,
-        value,
-        data,
+        gasPrice: currentState.send.gasPrice,
+        blockGasLimit: currentState.metamask.blockGasLimit,
+        selectedAddress: currentState.metamask.selectedAddress,
+        sendToken: currentState.send.sendToken,
+        to: currentState.send.to.toLowerCase(),
+        value: payload?.amount ?? currentState.send.draftTransaction.value,
+        data: payload?.hexData ?? currentState.send.draftTransaction.data,
       });
-      dispatch(setGasLimit(gasLimit));
-      dispatch(setCustomGasLimit(gasLimit));
-      dispatch(updateSendErrors({ gasLoadingError: null }));
-    } catch (err) {
-      dispatch(updateSendErrors({ gasLoadingError: 'gasLoadingError' }));
+      await thunkApi.dispatch(setCustomGasLimit(gasLimit));
+      return {
+        gasLimit,
+      };
     }
-    await dispatch(gasLoadingFinished());
+    return null;
+  },
+);
+
+const computeEstimatedGasLimitDebounced = debounce(
+  (dispatch) => dispatch(computeEstimatedGasLimitAsyncThunk()),
+  1000,
+);
+
+export const initializeSendState = createAsyncThunk(
+  'send/initializeSendState',
+  async (_, thunkApi) => {
+    const state = thunkApi.getState();
+    const selectedAccount = getSelectedAccount(state);
+    await thunkApi.dispatch(fetchBasicGasEstimates());
+    const result = await thunkApi.dispatch(
+      computeEstimatedGasLimitAsyncThunk(),
+    );
+    const updatedState = thunkApi.getState();
+    const gasPrice = getAveragePriceEstimateInHexWEI(updatedState);
+    const gasLimit = result?.payload?.gasLimit ?? GAS_LIMITS.SIMPLE;
+    return {
+      address: selectedAccount.address,
+      balance: selectedAccount.balance,
+      gasPrice,
+      gasLimit: updatedState.gasLimit,
+      primaryCurrency: getPrimaryCurrency(updatedState),
+      conversionRate: getConversionRate(updatedState),
+      gasTotal: calcGasTotal(gasLimit, gasPrice),
+    };
+  },
+);
+
+export const initialState = {
+  sendStateStatus: 'UNINITIALIZED',
+  gasButtonGroupShown: true,
+  gasIsLoading: false,
+  gasTotal: '0x0',
+  tokenBalance: '0x0',
+  etherBalance: '0x0',
+  draftTransaction: {
+    from: '',
+    to: '',
+    data: null,
+    value: '0',
+    gas: '0', // this is gasLimit
+    gasPrice: '0x0',
+  },
+  recipient: {
+    address: '',
+    nickname: '',
+  },
+  memo: '',
+  errors: {},
+  warnings: {},
+  maxModeOn: false,
+  editingTransactionId: null,
+  ensResolution: null,
+  ensResolutionError: '',
+};
+
+function computeMaximumEtherToSend(balance, gasTotal) {
+  return subtractCurrencies(addHexPrefix(balance), addHexPrefix(gasTotal), {
+    toNumericBase: 'hex',
+    aBase: 16,
+    bBase: 16,
+  });
+}
+
+function computeMaximumTokenToSend(balance, token) {
+  const decimals = token?.decimals ?? 0;
+  const multiplier = Math.pow(10, Number(decimals));
+
+  return multiplyCurrencies(balance, multiplier, {
+    toNumericBase: 'hex',
+    multiplicandBase: 16,
+    multiplierBase: 10,
+  });
+}
+
+const slice = createSlice({
+  name,
+  initialState,
+  reducers: {
+    beginEditingTransaction: (state, action) => {
+      state.editingTransactionId = action.payload.id;
+      state.gasLimit = action.payload.gasLimit;
+      state.gasPrice = action.payload.gasPrice;
+      state.amount = action.payload.amount;
+      state.errors.to = null;
+      state.errors.amount = null;
+      state.to = action.payload.to;
+      state.toNickname = action.payload.toNickname;
+      state.from = action.payload.from;
+    },
+    clearMaximumAmount: (state) => {
+      state.maxModeOn = false;
+      state.amount = '0x0';
+    },
+    updateSendErrors: (state, action) => {
+      state.errors = { ...state.errors, ...action.payload };
+    },
+    showGasButtonGroup: (state) => {
+      state.gasButtonGroupShown = true;
+    },
+    hideGasButtonGroup: (state) => {
+      state.gasButtonGroupShown = false;
+    },
+    updateDraftTransaction: (state, action) => {
+      state.draftTransaction.gas ??= action.payload.gasLimit;
+      state.draftTransaction.gasPrice ??= action.payload.gasPrice;
+      state.draftTransaction.data ??= action.payload.hexData;
+      state.draftTransaction.from ??= action.payload.from;
+      const newGasTotal = calcGasTotal(
+        state.draftTransaction.gas,
+        state.draftTransaction.gasPrice,
+      );
+      let newValue = null;
+      if (newGasTotal !== state.gasTotal) {
+        state.gasTotal = newGasTotal;
+        // TODO: remove dependency on conversionRate/primaryCurrency
+        state.errors.gasFee = computeGasFeeError({
+          gasTotal: state.gasTotal,
+          conversionRate: action.payload.conversionRate,
+          etherBalance: state.etherBalance,
+          primaryCurrency: action.payload.primaryCurrency,
+        });
+        if (state.maxModeOn && !action.payload.amount) {
+          newValue = state.sendToken
+            ? computeMaximumTokenToSend(state.tokenBalance, state.sendToken)
+            : computeMaximumEtherToSend(state.etherBalance, state.gasTotal);
+        }
+      }
+      if (action.payload.amount) {
+        state.maxModeOn = false;
+        newValue = action.payload.amount;
+      }
+      if (newValue) {
+        state.draftTransaction.value = newValue;
+        state.errors.amount = computeSendError({
+          gasTotal: state.gasTotal,
+          conversionRate: action.payload.conversionRate,
+          etherBalance: state.etherBalance,
+          primaryCurrency: action.payload.primaryCurrency,
+          amount: state.draftTransaction.value,
+          sendToken: state.sendToken,
+          tokenBalance: state.tokenBalance,
+        });
+      }
+      // must check if new send amount is in error, if the amount changes based on
+      // either maxMode calculation or by being set by the user.
+    },
+    updateGasLimit: (state, action) => {
+      state.gasLimit = action.payload.gasLimit;
+      state.gasTotal = calcGasTotal(state.gasLimit, state.gasPrice);
+      if (state.maxModeOn) {
+        state.amount = state.sendToken
+          ? computeMaximumTokenToSend(state.tokenBalance, state.sendToken)
+          : computeMaximumEtherToSend(state.etherBalance, state.gasTotal);
+      }
+      state.errors.gasFee = computeGasFeeError({
+        gasTotal: state.gasTotal,
+        conversionRate: action.payload.conversionRate,
+        etherBalance: state.etherBalance,
+        primaryCurrency: action.payload.primaryCurrency,
+      });
+    },
+    updateGasPrice: (state, action) => {
+      state.gasPrice = action.payload;
+      state.gasTotal = calcGasTotal(state.gasLimit, state.gasPrice);
+      if (state.maxModeOn) {
+        state.amount = state.sendToken
+          ? computeMaximumTokenToSend(state.tokenBalance, state.sendToken)
+          : computeMaximumEtherToSend(state.etherBalance, state.gasTotal);
+      }
+      state.errors.gasFee = computeGasFeeError({
+        gasTotal: state.gasTotal,
+        conversionRate: action.payload.conversionRate,
+        etherBalance: state.etherBalance,
+        primaryCurrency: action.payload.primaryCurrency,
+      });
+    },
+    updateSendTokenBalance: (state, action) => {
+      state.tokenBalance = action.payload;
+      if (state.maxModeOn) {
+        state.amount = computeMaximumTokenToSend(
+          state.tokenBalance,
+          state.sendToken,
+        );
+      }
+    },
+    updateSendHexData: (state, action) => {
+      state.data = action.payload;
+    },
+    updateRecipient: (state, action) => {
+      state.recipient.address = action.payload.address;
+      state.recipient.nickname = action.payload.nickname;
+      if (state.sendToken === null) {
+        state.draftTransaction.to = action.payload.address;
+      }
+    },
+    updateSendAmount: (state, action) => {
+      if (state.maxModeOn) {
+        state.maxModeOn = false;
+      }
+      state.amount = action.payload.amount;
+      state.errors.amount = computeSendError({
+        gasTotal: state.gasTotal,
+        conversionRate: action.payload.conversionRate,
+        etherBalance: state.etherBalance,
+        primaryCurrency: action.payload.primaryCurrency,
+        amount: state.amount,
+        sendToken: state.sendToken,
+        tokenBalance: state.tokenBalance,
+      });
+    },
+    setEditingTransactionId: (state, action) => {
+      state.editingTransactionId = action.payload;
+    },
+    updateSendFrom: (state, action) => {
+      state.from = action.payload.from;
+    },
+    toggleSendMaxMode: (state) => {
+      if (state.maxModeOn) {
+        state.maxModeOn = false;
+        state.amount = '0x0';
+      } else {
+        state.maxModeOn = true;
+        state.amount = state.sendToken
+          ? computeMaximumTokenToSend(state.tokenBalance, state.sendToken)
+          : computeMaximumEtherToSend(state.etherBalance, state.gasTotal);
+      }
+    },
+    updateSendToken: (state, action) => {
+      state.token = action.payload;
+      if (state.editingTransactionId && !state.token) {
+        const unapprovedTx =
+          state?.unapprovedTxs?.[state.editingTransactionId] || {};
+        const txParams = unapprovedTx.txParams || {};
+        state.tokenBalance = null;
+        state.balance = '0';
+        state.from = unapprovedTx.from ?? '';
+        txParams.data = '';
+      }
+      if (state.maxModeOn) {
+        state.amount = computeMaximumTokenToSend(
+          state.tokenBalance,
+          state.sendToken,
+        );
+      }
+    },
+    updateSendEnsResolution: (state, action) => {
+      state.ensResolution = action.payload;
+      state.ensResolutionError = '';
+    },
+    updateSendEnsResolutionError: (state, action) => {
+      state.ensResolution = null;
+      state.ensResolutionError = action.payload;
+    },
+    resetSendState: () => initialState,
+  },
+  extraReducers: {
+    [SELECTED_ACCOUNT_CHANGED]: (state, action) => {
+      if (state.maxModeOn) {
+        state.etherBalance = action.payload.account.balance;
+        state.amount = computeMaximumEtherToSend(
+          state.etherBalance,
+          state.gasTotal,
+        );
+      }
+    },
+    [SET_BASIC_GAS_ESTIMATE_DATA]: (state, action) => {
+      state.gasPrice = getGasPriceInHexWei(action.value.average ?? '0x0');
+      state.gasTotal = calcGasTotal(state.gasLimit, state.gasPrice);
+      if (state.maxModeOn) {
+        state.amount = state.sendToken
+          ? computeMaximumTokenToSend(state.tokenBalance, state.sendToken)
+          : computeMaximumEtherToSend(state.etherBalance, state.gasTotal);
+      }
+    },
+    [computeEstimatedGasLimitAsyncThunk.pending]: (state) => {
+      state.gasIsLoading = true;
+    },
+    [computeEstimatedGasLimitAsyncThunk.fulfilled]: (state, action) => {
+      // state.errors.gasLoadingError = null;
+      // state.gasIsLoading = false;
+      // if (action.payload !== null) {
+      //   state.gasLimit = action.payload.gasLimit;
+      //   state.gasTotal = calcGasTotal(state.gasLimit, state.gasPrice);
+      //   if (state.maxModeOn) {
+      //     state.amount = state.sendToken
+      //       ? computeMaximumTokenToSend(state.tokenBalance, state.sendToken)
+      //       : computeMaximumEtherToSend(state.etherBalance, state.gasTotal);
+      //   }
+      //   state.errors.gasFee = computeGasFeeError({
+      //     gasTotal: state.gasTotal,
+      //     conversionRate: action.payload.conversionRate,
+      //     etherBalance: state.etherBalance,
+      //     primaryCurrency: action.payload.primaryCurrency,
+      //   });
+      // }
+    },
+    [computeEstimatedGasLimitAsyncThunk.rejected]: (state) => {
+      state.gasIsLoading = false;
+      state.errors.gasLoadingError = 'gasLoadingError';
+    },
+    [initializeSendState.fulfilled]: (state, action) => {
+      state.sendStateStatus = 'INITIALIZED';
+      state.from = action.payload.address;
+      state.etherBalance = action.payload.balance;
+      state.gasLimit = action.payload.gasLimit;
+      state.gasPrice = action.payload.gasPrice;
+      state.gasTotal = action.payload.gasTotal;
+      if (state.maxModeOn) {
+        state.amount = state.sendToken
+          ? computeMaximumTokenToSend(state.tokenBalance, state.sendToken)
+          : computeMaximumEtherToSend(state.etherBalance, state.gasTotal);
+      }
+      state.errors.amount = computeSendError({
+        gasTotal: state.gasTotal,
+        conversionRate: action.payload.conversionRate,
+        etherBalance: state.etherBalance,
+        primaryCurrency: action.payload.primaryCurrency,
+        amount: state.amount,
+        sendToken: state.sendToken,
+        tokenBalance: state.tokenBalance,
+      });
+      state.errors.gasFee = computeGasFeeError({
+        gasTotal: state.gasTotal,
+        conversionRate: action.payload.conversionRate,
+        etherBalance: state.etherBalance,
+        primaryCurrency: action.payload.primaryCurrency,
+      });
+    },
+  },
+});
+
+const { actions, reducer } = slice;
+
+export default reducer;
+
+const {
+  beginEditingTransaction,
+  updateSendErrors,
+  showGasButtonGroup,
+  hideGasButtonGroup,
+  updateSendEnsResolution,
+  updateSendEnsResolutionError,
+  resetSendState,
+  setEditingTransactionId,
+  updateSendFrom,
+  updateSendTo,
+  updateDraftTransaction,
+} = actions;
+
+export {
+  beginEditingTransaction,
+  updateSendErrors,
+  showGasButtonGroup,
+  hideGasButtonGroup,
+  updateSendEnsResolution,
+  updateSendEnsResolutionError,
+  updateSendFrom,
+  setEditingTransactionId,
+  resetSendState,
+  updateSendTo,
+};
+
+// Helper methods
+
+export function updateGasLimit(gasLimit) {
+  return async (dispatch, getState) => {
+    const state = getState();
+    const conversionRate = getConversionRate(state);
+    const primaryCurrency = getPrimaryCurrency(state);
+    await dispatch(
+      actions.updateGasLimit({ gasLimit, conversionRate, primaryCurrency }),
+    );
+  };
+}
+
+export function updateGasPrice(gasPrice) {
+  return async (dispatch, getState) => {
+    const state = getState();
+    const conversionRate = getConversionRate(state);
+    const primaryCurrency = getPrimaryCurrency(state);
+    await dispatch(
+      actions.updateGasPrice({ gasPrice, conversionRate, primaryCurrency }),
+    );
+  };
+}
+
+export function updateSendAmount(amount) {
+  return async (dispatch, getState) => {
+    const state = getState();
+    const conversionRate = getConversionRate(state);
+    const primaryCurrency = getPrimaryCurrency(state);
+    await dispatch(
+      actions.updateSendAmount({ amount, conversionRate, primaryCurrency }),
+    );
+  };
+}
+
+export function computeEstimatedGasLimit() {
+  return (dispatch) => {
+    return computeEstimatedGasLimitDebounced(dispatch);
+  };
+}
+
+export function updateSendHexData(hexData) {
+  return async (dispatch) => {
+    const { gasLimit } = await dispatch(computeEstimatedGasLimit({ hexData }));
+    await dispatch(updateDraftTransaction({ hexData, gasLimit }));
+  };
+}
+
+export function toggleSendMaxMode() {
+  return async (dispatch, getState) => {
+    const state = getState();
+    await dispatch(actions.toggleSendMaxMode());
+    if (state.sendToken && state.maxModeOn) {
+      await dispatch(computeEstimatedGasLimit());
+    }
+  };
+}
+
+export function updateRecipient({ address, nickname }) {
+  return async (dispatch, getState) => {
+    const state = getState();
+    if (state.send.sendToken !== null) {
+      const hexData = '0x';
+      const { gasLimit } = await dispatch(
+        computeEstimatedGasLimit({ hexData, to: state.sendToken.address }),
+      );
+      await dispatch(
+        updateDraftTransaction({
+          to: state.sendToken.address,
+          hexData, // compute hexData for erc20 transfer
+          gasLimit,
+        }),
+      );
+    }
+    await dispatch(
+      updateSendTo({
+        to: address,
+        nickname,
+      }),
+    );
+    if (state.send.to !== address) {
+      await dispatch(computeEstimatedGasLimit());
+    }
+  };
+}
+
+export function updateSendTokenBalance() {
+  return (dispatch, getState) => {
+    const state = getState();
+    const tokenContract = getSendTokenContract(state);
+    const address = getSendFrom(state);
+    const sendToken = getSendTokenAddress(state);
+    const tokenBalancePromise = tokenContract
+      ? tokenContract.balanceOf(address)
+      : Promise.resolve();
+
+    return tokenBalancePromise
+      .then((usersToken) => {
+        if (usersToken) {
+          const newTokenBalance = calcTokenBalance({ sendToken, usersToken });
+          dispatch(actions.updateSendTokenBalance(newTokenBalance));
+        }
+      })
+      .catch((err) => {
+        log.error(err);
+        updateSendErrors({ tokenBalance: 'tokenBalanceError' });
+      });
+  };
+}
+
+export function updateSendToken(token) {
+  return async (dispatch) => {
+    await dispatch(actions.updateSendToken(token));
+    await dispatch(updateSendTokenBalance());
+    await dispatch(computeEstimatedGasLimit());
   };
 }
 
@@ -319,7 +726,7 @@ export function getGasPrice(state) {
 }
 
 export function getGasTotal(state) {
-  return calcGasTotal(getGasLimit(state), getGasPrice(state));
+  return state[name].gasTotal;
 }
 
 export function getSendToken(state) {
@@ -412,6 +819,10 @@ export function gasFeeIsInError(state) {
 
 export function getGasButtonGroupShown(state) {
   return state[name].gasButtonGroupShown;
+}
+
+export function isSendStateInitialized(state) {
+  return state[name].sendStateStatus === 'INITIALIZED';
 }
 
 export function getTitleKey(state) {

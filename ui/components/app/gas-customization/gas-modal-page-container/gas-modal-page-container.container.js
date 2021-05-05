@@ -16,8 +16,6 @@ import {
 import {
   hideGasButtonGroup,
   updateSendErrors,
-  setGasLimit,
-  setGasPrice,
   updateSendAmount,
   getTokenBalance,
   getSendMaxModeState,
@@ -25,6 +23,8 @@ import {
   getGasLimit,
   getGasPrice,
   getSendAmount,
+  updateGasLimit,
+  updateGasPrice,
 } from '../../../../ducks/send';
 import {
   conversionRateSelector as getConversionRate,
@@ -199,8 +199,8 @@ const mapDispatchToProps = (dispatch) => {
     updateCustomGasLimit: (newLimit) =>
       dispatch(setCustomGasLimit(addHexPrefix(newLimit))),
     setGasData: (newLimit, newPrice) => {
-      dispatch(setGasLimit(newLimit));
-      dispatch(setGasPrice(newPrice));
+      dispatch(updateGasLimit(newLimit));
+      dispatch(updateGasPrice(newPrice));
     },
     updateConfirmTxGasAndCalculate: (gasLimit, gasPrice, updatedTx) => {
       updateCustomGasPrice(gasPrice);

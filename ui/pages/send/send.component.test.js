@@ -27,6 +27,8 @@ jest.mock('./send.utils', () => ({
   ),
 }));
 
+let initialized = false;
+
 describe('Send Component', () => {
   let wrapper, didMountSpy, updateGasSpy;
 
@@ -35,6 +37,9 @@ describe('Send Component', () => {
   };
 
   const propsMethodSpies = {
+    initializeSendState: jest.fn(() => {
+      initialized = true;
+    }),
     updateAndSetGasLimit: jest.fn(),
     updateSendErrors: jest.fn(),
     updateSendTokenBalance: jest.fn(),
@@ -51,37 +56,25 @@ describe('Send Component', () => {
       SendTransactionScreen.prototype,
       'componentDidMount',
     );
-    updateGasSpy = sinon.spy(SendTransactionScreen.prototype, 'updateGas');
   });
 
   beforeEach(() => {
+    initialized = false;
     wrapper = shallow(
       <SendTransactionScreen
-        amount="mockAmount"
-        blockGasLimit="mockBlockGasLimit"
-        conversionRate={10}
-        editingTransactionId="mockEditingTransactionId"
-        fetchBasicGasEstimates={propsMethodSpies.fetchBasicGasEstimates}
-        fetchGasEstimates={propsMethodSpies.fetchGasEstimates}
         from={{ address: 'mockAddress', balance: 'mockBalance' }}
-        gasLimit="mockGasLimit"
-        gasPrice="mockGasPrice"
         gasTotal="mockGasTotal"
         history={{ mockProp: 'history-abc' }}
         chainId={ROPSTEN_CHAIN_ID}
-        primaryCurrency="mockPrimaryCurrency"
-        selectedAddress="mockSelectedAddress"
         sendToken={{ address: 'mockTokenAddress', decimals: 18, symbol: 'TST' }}
         showHexData
-        tokenBalance="mockTokenBalance"
-        tokenContract={{ method: 'mockTokenMethod' }}
-        updateAndSetGasLimit={propsMethodSpies.updateAndSetGasLimit}
+        initialized={initialized}
         qrCodeDetected={() => undefined}
         scanQrCode={() => undefined}
+        initializeSendState={propsMethodSpies.initializeSendState}
         updateSendEnsResolution={() => undefined}
         updateSendEnsResolutionError={() => undefined}
-        updateSendErrors={propsMethodSpies.updateSendErrors}
-        updateSendTo={() => undefined}
+        updateRecipient={() => undefined}
         updateSendTokenBalance={propsMethodSpies.updateSendTokenBalance}
         resetSendState={propsMethodSpies.resetSendState}
         updateToNicknameIfNecessary={
@@ -95,7 +88,6 @@ describe('Send Component', () => {
   afterEach(() => {
     jest.clearAllMocks();
     didMountSpy.resetHistory();
-    updateGasSpy.resetHistory();
   });
 
   describe('componentDidMount', () => {
@@ -103,15 +95,8 @@ describe('Send Component', () => {
       expect(didMountSpy.callCount).toStrictEqual(1);
     });
 
-    it('should call props.fetchBasicGasAndTimeEstimates', () => {
-      propsMethodSpies.fetchBasicGasEstimates.mockClear();
-      expect(propsMethodSpies.fetchBasicGasEstimates).not.toHaveBeenCalled();
-      wrapper.instance().componentDidMount();
-      expect(propsMethodSpies.fetchBasicGasEstimates).toHaveBeenCalled();
-    });
-
-    it('should call this.updateGas', () => {
-      expect(updateGasSpy.callCount).toStrictEqual(1);
+    it('should call initializeSendState', () => {
+      expect(propsMethodSpies.initializeSendState).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -147,74 +132,6 @@ describe('Send Component', () => {
       });
     });
 
-    it('should not call getAmountErrorObject if doesAmountErrorRequireUpdate returns false', () => {
-      wrapper.instance().componentDidUpdate({
-        from: {
-          balance: 'mockBalance',
-        },
-      });
-      expect(util.getAmountErrorObject).not.toHaveBeenCalled();
-    });
-
-    it('should call getAmountErrorObject if doesAmountErrorRequireUpdate returns true', () => {
-      wrapper.instance().componentDidUpdate({
-        from: {
-          balance: 'balanceChanged',
-        },
-      });
-      expect(util.getAmountErrorObject).toHaveBeenCalled();
-      expect(util.getAmountErrorObject.mock.calls[0][0]).toMatchObject({
-        amount: 'mockAmount',
-        balance: 'mockBalance',
-        conversionRate: 10,
-        gasTotal: 'mockGasTotal',
-        primaryCurrency: 'mockPrimaryCurrency',
-        sendToken: {
-          address: 'mockTokenAddress',
-          decimals: 18,
-          symbol: 'TST',
-        },
-        tokenBalance: 'mockTokenBalance',
-      });
-    });
-
-    it('should call getGasFeeErrorObject if doesAmountErrorRequireUpdate returns true and sendToken is truthy', () => {
-      wrapper.instance().componentDidUpdate({
-        from: {
-          balance: 'balanceChanged',
-        },
-      });
-      expect(util.getGasFeeErrorObject).toHaveBeenCalled();
-      expect(util.getGasFeeErrorObject.mock.calls[0][0]).toMatchObject({
-        balance: 'mockBalance',
-        conversionRate: 10,
-        gasTotal: 'mockGasTotal',
-        primaryCurrency: 'mockPrimaryCurrency',
-        sendToken: {
-          address: 'mockTokenAddress',
-          decimals: 18,
-          symbol: 'TST',
-        },
-      });
-    });
-
-    it('should not call getGasFeeErrorObject if doesAmountErrorRequireUpdate returns false', () => {
-      wrapper.instance().componentDidUpdate({
-        from: { address: 'mockAddress', balance: 'mockBalance' },
-      });
-      expect(util.getGasFeeErrorObject).not.toHaveBeenCalled();
-    });
-
-    it('should not call getGasFeeErrorObject if doesAmountErrorRequireUpdate returns true but sendToken is falsy', () => {
-      wrapper.setProps({ sendToken: null });
-      wrapper.instance().componentDidUpdate({
-        from: {
-          balance: 'balanceChanged',
-        },
-      });
-      expect(util.getGasFeeErrorObject).not.toHaveBeenCalled();
-    });
-
     it('should call updateSendErrors with the expected params if sendToken is falsy', () => {
       wrapper.setProps({ sendToken: null });
       wrapper.instance().componentDidUpdate({
@@ -228,26 +145,8 @@ describe('Send Component', () => {
         gasFee: null,
       });
     });
-
-    it('should call updateSendErrors with the expected params if sendToken is truthy', () => {
-      wrapper.setProps({
-        sendToken: { address: 'mockTokenAddress', decimals: 18, symbol: 'TST' },
-      });
-      wrapper.instance().componentDidUpdate({
-        from: {
-          balance: 'balanceChanged',
-        },
-      });
-      expect(propsMethodSpies.updateSendErrors).toHaveBeenCalled();
-      expect(propsMethodSpies.updateSendErrors.mock.calls[0][0]).toMatchObject({
-        amount: 'mockAmountError',
-        gasFee: 'mockGasFeeError',
-      });
-    });
-
     it('should not call updateSendTokenBalance or this.updateGas if network === prevNetwork', () => {
       propsMethodSpies.updateSendTokenBalance.mockClear();
-      updateGasSpy.resetHistory();
       wrapper.instance().componentDidUpdate({
         from: {
           balance: 'balanceChanged',

@@ -6,7 +6,7 @@ import {
 } from '../../../../selectors';
 
 import {
-  updateSendTo,
+  updateRecipient,
   getSendEnsResolution,
   getSendEnsResolutionError,
 } from '../../../../ducks/send';
@@ -42,6 +42,7 @@ function mapStateToProps(state) {
 
 function mapDispatchToProps(dispatch) {
   return {
-    updateSendTo: (to, nickname) => dispatch(updateSendTo({ to, nickname })),
+    updateRecipient: ({ address, nickname }) =>
+      dispatch(updateRecipient({ address, nickname })),
   };
 }

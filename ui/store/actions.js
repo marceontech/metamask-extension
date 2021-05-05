@@ -1,7 +1,7 @@
 import abi from 'human-standard-token-abi';
 import pify from 'pify';
 import log from 'loglevel';
-import { capitalize } from 'lodash';
+import { capitalize, isEqual } from 'lodash';
 import getBuyEthUrl from '../../app/scripts/lib/buy-eth-url';
 import { checksumAddress } from '../helpers/utils/util';
 import {
@@ -18,6 +18,7 @@ import { getEnvironmentType, addHexPrefix } from '../../app/scripts/lib/util';
 import {
   getPermittedAccountsForCurrentTab,
   getSelectedAddress,
+  getTargetAccount,
 } from '../selectors';
 import { resetSendState } from '../ducks/send';
 import { switchedToUnconnectedAccount } from '../ducks/alerts/unconnected-account';
@@ -1047,19 +1048,54 @@ export function updateMetamaskState(newState) {
   return (dispatch, getState) => {
     const { metamask: currentState } = getState();
 
-    const { currentLocale, selectedAddress } = currentState;
+    const {
+      currentLocale,
+      selectedAddress,
+      provider,
+      accounts,
+      cachedBalances,
+    } = currentState;
     const {
       currentLocale: newLocale,
       selectedAddress: newSelectedAddress,
+      provider: newProvider,
+      accounts: newAccounts,
+      cachedBalances: newCachedBalances,
     } = newState;
 
     if (currentLocale && newLocale && currentLocale !== newLocale) {
       dispatch(updateCurrentLocale(newLocale));
     }
+
+    const selectedAccount = {
+      ...accounts?.[selectedAddress],
+      balance: cachedBalances?.[provider?.chainId]?.[selectedAddress],
+    };
+
+    const newSelectedAccount = {
+      ...newAccounts?.[newSelectedAddress],
+      balance: newCachedBalances?.[newProvider?.chainId]?.[newSelectedAddress],
+    };
+
     if (selectedAddress !== newSelectedAddress) {
       dispatch({ type: actionConstants.SELECTED_ADDRESS_CHANGED });
     }
 
+    if (isEqual(selectedAccount, newSelectedAccount) === false) {
+      dispatch({
+        type: actionConstants.SELECTED_ACCOUNT_CHANGED,
+        payload: { account: newSelectedAccount },
+      });
+    }
+
+    if (
+      provider?.chainId !== newProvider?.chainId &&
+      newProvider?.chainId !== undefined
+    ) {
+      dispatch({
+        type: actionConstants.CHAIN_CHANGED,
+      });
+    }
     dispatch({
       type: actionConstants.UPDATE_METAMASK_STATE,
       value: newState,

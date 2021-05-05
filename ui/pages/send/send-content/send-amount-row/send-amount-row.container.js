@@ -1,10 +1,7 @@
 import { connect } from 'react-redux';
 import { getConversionRate } from '../../../../ducks/metamask/metamask';
-import { getAmountErrorObject, getGasFeeErrorObject } from '../../send.utils';
 import {
-  updateSendErrors,
   updateSendAmount,
-  setMaxModeTo,
   getGasTotal,
   getPrimaryCurrency,
   getSendToken,
@@ -13,6 +10,7 @@ import {
   getTokenBalance,
   getSendMaxModeState,
   sendAmountIsInError,
+  toggleSendMaxMode,
 } from '../../../../ducks/send';
 import SendAmountRow from './send-amount-row.component';
 
@@ -34,13 +32,7 @@ function mapStateToProps(state) {
 
 function mapDispatchToProps(dispatch) {
   return {
-    setMaxModeTo: (bool) => dispatch(setMaxModeTo(bool)),
+    toggleSendMaxMode: () => dispatch(toggleSendMaxMode()),
     updateSendAmount: (newAmount) => dispatch(updateSendAmount(newAmount)),
-    updateGasFeeError: (amountDataObject) => {
-      dispatch(updateSendErrors(getGasFeeErrorObject(amountDataObject)));
-    },
-    updateSendAmountError: (amountDataObject) => {
-      dispatch(updateSendErrors(getAmountErrorObject(amountDataObject)));
-    },
   };
 }
